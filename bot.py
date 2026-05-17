@@ -168,8 +168,9 @@ def check_and_post_analysis(draws, cache_data, client, did_post_recently=False):
                 print("⏱️ Cooldown wait before posting analysis...")
                 time.sleep(10)
                 
-            print(f"✨ Drawing Eve detected! Preparing Draw Eve Analysis tweet...")
             analysis_text = generate_analysis_tweet(draws, weekday)
+            if force_post:
+                analysis_text += f"\n\n(分析時間: {now_jst.strftime('%H:%M')})"
             
             try:
                 print("📣 Posting Draw Eve Analysis to X...")
