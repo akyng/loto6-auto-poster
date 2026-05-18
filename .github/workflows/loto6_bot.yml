@@ -37,6 +37,8 @@ jobs:
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           X_APP_URL: ${{ secrets.X_APP_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
         run: python bot.py
 
       # 5. キャッシュファイル(cache.json)の自動書き戻し (二重投稿防止の整合性を維持)
