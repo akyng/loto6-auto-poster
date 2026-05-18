@@ -18,7 +18,7 @@ def load_cache():
     キャッシュファイルから自動投稿状況を読み込みます。
     新旧フォーマットのマイグレーションも行います。
     """
-    default_cache = {"last_draw_number": 0, "last_posted_analysis_date": ""}
+    default_cache = {"last_draw_number": 0, "last_posted_analysis_date": "", "last_posted_trivia_date": ""}
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
@@ -189,6 +189,49 @@ def check_and_post_analysis(draws, cache_data, client, did_post_recently=False):
     else:
         print("ℹ️ Not Sunday/Wednesday 20:00 JST. Skipping analysis check.")
 
+def check_and_post_trivia(cache_data, client):
+    """
+    日本時間(JST)の毎日 12:00台(正午)に、ロト6/宝くじのトリビアや雑学ネタを自動投稿します。
+    """
+    # 日本時間 (JST) の取得
+    JST = timezone(timedelta(hours=9))
+    now_jst = datetime.now(JST)
+
+    hour = now_jst.hour
+    today_str = now_jst.strftime('%Y-%m-%d')
+
+    # 手動テスト用のフラグ
+    force_post = os.getenv('FORCE_TRIVIA', 'false').lower() == 'true'
+
+    # 毎日 12:00台、または強制フラグあり
+    if force_post or (hour == 12):
+        last_posted_date = cache_data.get('last_posted_trivia_date', '')
+        if force_post or last_posted_date != today_str:
+            print("📣 Generating and posting daily Loto6 trivia...")
+            from generator import Loto6Generator
+            trivia_text = Loto6Generator.generate_trivia_tweet()
+            
+            if not trivia_text:
+                print("⚠️ Trivia content generation returned None. Skipping post.")
+                return
+                
+            try:
+                print("📣 Posting Daily Trivia to X...")
+                response = client.create_tweet(text=trivia_text)
+                print(f"✅ Posted successfully! Tweet ID: {response.data['id']}")
+                
+                # キャッシュを更新して保存
+                cache_data['last_posted_trivia_date'] = today_str
+                save_cache(cache_data)
+            except tweepy.TweepyException as e:
+                print(f"❌ X API Error during trivia posting: {e}")
+            except Exception as e:
+                print(f"❌ Unexpected Error: {e}")
+        else:
+            print("😴 Trivia tweet for today has already been posted. Skipping.")
+    else:
+        print("ℹ️ Not 12:00 JST. Skipping daily trivia check.")
+
 def main():
     print("🤖 --- Loto6 Oracle X Auto-Poster Started ---")
     
@@ -278,6 +321,11 @@ def main():
     # 6. 【新規追加】次回抽せん前日分析データのチェックと投稿 (日曜・水曜夜用)
     print("📊 Checking for Draw Eve Analysis (Sunday/Wednesday JST 20:30)...")
     check_and_post_analysis(draws, cache_data, client, did_post_recently=did_post_recently)
+
+    # 7. 【新規追加】毎日12:00（正午）の宝くじトリビア・面白ネタ投稿
+    print("🔮 Checking for Daily Trivia (Everyday JST 12:00)...")
+    check_and_post_trivia(cache_data, client)
+
     print("🎉 Run completed successfully!")
 
 if __name__ == '__main__':
