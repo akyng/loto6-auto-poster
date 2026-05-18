@@ -11,7 +11,7 @@ class Config:
     ACCESS_TOKEN_SECRET = os.getenv('X_ACCESS_TOKEN_SECRET')
     CLIENT_ID = os.getenv('X_CLIENT_ID')
     CLIENT_SECRET = os.getenv('X_CLIENT_SECRET')
-    APP_URL = os.getenv('X_APP_URL', 'https://onelink.to/loto6oracle')
+    APP_URL = os.getenv('X_APP_URL', 'https://onelink.to/76cms6')
 
     @classmethod
     def validate(cls):

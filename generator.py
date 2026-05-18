@@ -20,7 +20,7 @@ class Loto6Generator:
         client = genai.Client(api_key=api_key)
         
         # 宣伝URLの取得
-        app_url = os.getenv('X_APP_URL', 'https://onelink.to/loto6oracle')
+        app_url = os.getenv('X_APP_URL', 'https://onelink.to/76cms6')
         
         # プロンプトの定義
         prompt = f"""

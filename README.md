@@ -70,7 +70,7 @@ APIキーなどの機密情報を安全に保持するため、GitHubのリポ�
 | `X_API_KEY_SECRET` | `0Iq4ViG0SbwNy...` (Consumer Secret) |
 | `X_ACCESS_TOKEN` | `205591664373...` (Access Token) |
 | `X_ACCESS_TOKEN_SECRET` | `udnuQ8vLVphU8...` (Access Token Secret) |
-| `X_APP_URL` | `https://onelink.to/loto6oracle` (スマートリンクURL) |
+| `X_APP_URL` | `https://onelink.to/76cms6` (スマートリンクURL) |
 
 ### 3. 書き込み権限（Workflow Permissions）の有効化
 ボットが自動投稿した後に、二重投稿防止用の `cache.json` の更新履歴をGitHubに自動保存（Git Push）させるための設定です。
