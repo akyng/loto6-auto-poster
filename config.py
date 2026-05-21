@@ -13,6 +13,10 @@ class Config:
     CLIENT_SECRET = os.getenv('X_CLIENT_SECRET')
     APP_URL = os.getenv('X_APP_URL', 'https://onelink.to/76cms6')
 
+    # Chatwork Settings
+    CHATWORK_API_TOKEN = os.getenv('CHATWORK_API_TOKEN')
+    CHATWORK_ROOM_ID = os.getenv('CHATWORK_ROOM_ID')
+
     @classmethod
     def validate(cls):
         missing = []

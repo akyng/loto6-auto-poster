@@ -47,6 +47,24 @@ def save_cache(data):
     except Exception as e:
         print(f"❌ Cache write error: {e}")
 
+def send_chatwork_notification(message: str) -> None:
+    """Chatwork に通知メッセージを送信する。"""
+    import requests
+    token = Config.CHATWORK_API_TOKEN
+    room_id = Config.CHATWORK_ROOM_ID
+    if not token or not room_id:
+        print("⚠️ Chatwork credentials missing. Skipping notification.")
+        return
+    url = f"https://api.chatwork.com/v2/rooms/{room_id}/messages"
+    headers = {"X-ChatWorkToken": token}
+    data = {"body": message}
+    try:
+        response = requests.post(url, headers=headers, data=data)
+        response.raise_for_status()
+        print("✅ Chatwork notification sent!")
+    except Exception as e:
+        print(f"❌ Failed to send Chatwork notification: {e}")
+
 def create_tweets(draw):
     """
     ロト6の当選データから、自動投稿用のツイートテキストを作成します。
@@ -180,10 +198,21 @@ def check_and_post_analysis(draws, cache_data, client, did_post_recently=False):
                 # キャッシュを更新して保存
                 cache_data['last_posted_analysis_date'] = today_str
                 save_cache(cache_data)
+                
+                # Chatwork 成功通知！
+                msg = (
+                    "[info][title]📊 【ロト6】次回抽せん前日分析データ投稿成功！[/title]"
+                    f"投稿内容:\n{analysis_text}[/info]"
+                )
+                send_chatwork_notification(msg)
             except tweepy.TweepyException as e:
-                print(f"❌ X API Error during analysis posting: {e}")
+                err_msg = f"X API Error during analysis posting: {e}"
+                print(f"❌ {err_msg}")
+                send_chatwork_notification(f"[info][title]🔴 【ロト6】前日分析投稿失敗（X APIエラー）[/title]{err_msg}[/info]")
             except Exception as e:
-                print(f"❌ Unexpected Error: {e}")
+                err_msg = f"Unexpected Error: {e}"
+                print(f"❌ {err_msg}")
+                send_chatwork_notification(f"[info][title]🔴 【ロト6】前日分析投稿失敗（不明なエラー）[/title]{err_msg}[/info]")
         else:
             print("😴 Analysis tweet for today has already been posted. Skipping.")
     else:
@@ -224,10 +253,21 @@ def check_and_post_trivia(cache_data, client):
                 # キャッシュを更新して保存
                 cache_data['last_posted_trivia_date'] = today_str
                 save_cache(cache_data)
+                
+                # Chatwork 成功通知！
+                msg = (
+                    "[info][title]🔮 【ロト6】デイリー投稿成功！[/title]"
+                    f"投稿内容:\n{trivia_text}[/info]"
+                )
+                send_chatwork_notification(msg)
             except tweepy.TweepyException as e:
-                print(f"❌ X API Error during trivia posting: {e}")
+                err_msg = f"X API Error during trivia posting: {e}"
+                print(f"❌ {err_msg}")
+                send_chatwork_notification(f"[info][title]🔴 【ロト6】デイリー投稿失敗（X APIエラー）[/title]{err_msg}[/info]")
             except Exception as e:
-                print(f"❌ Unexpected Error: {e}")
+                err_msg = f"Unexpected Error: {e}"
+                print(f"❌ {err_msg}")
+                send_chatwork_notification(f"[info][title]🔴 【ロト6】デイリー投稿失敗（不明なエラー）[/title]{err_msg}[/info]")
         else:
             print("😴 Trivia tweet for today has already been posted. Skipping.")
     else:
@@ -296,10 +336,21 @@ def main():
             cache_data['last_draw_number'] = latest_draw_num
             save_cache(cache_data)
             
+            # Chatwork 成功通知！
+            msg = (
+                f"[info][title]🎉 【ロト6】第{latest_draw_num}回 抽せん結果速報 投稿成功！[/title]"
+                f"投稿内容:\n{news_text}[/info]"
+            )
+            send_chatwork_notification(msg)
+            
         except tweepy.TweepyException as e:
-            print(f"❌ X API Error during posting news: {e}")
+            err_msg = f"X API Error during posting news: {e}"
+            print(f"❌ {err_msg}")
+            send_chatwork_notification(f"[info][title]🔴 【ロト6】結果速報投稿失敗（X APIエラー）[/title]{err_msg}[/info]")
         except Exception as e:
-            print(f"❌ Unexpected Error: {e}")
+            err_msg = f"Unexpected Error: {e}"
+            print(f"❌ {err_msg}")
+            send_chatwork_notification(f"[info][title]🔴 【ロト6】結果速報投稿失敗（不明なエラー）[/title]{err_msg}[/info]")
 
         # B. キャリーオーバー速報の投稿（発生している場合）
         if carryover_text and cache_data['last_draw_number'] == latest_draw_num:
@@ -312,10 +363,21 @@ def main():
                 co_response = client.create_tweet(text=carryover_text)
                 print(f"✅ Carryover posted successfully. Tweet ID: {co_response.data['id']}")
                 did_post_recently = True
+                
+                # Chatwork 成功通知！
+                msg = (
+                    f"[info][title]💰 【ロト6】キャリーオーバー情報 投稿成功！[/title]"
+                    f"投稿内容:\n{carryover_text}[/info]"
+                )
+                send_chatwork_notification(msg)
             except tweepy.TweepyException as e:
-                print(f"❌ X API Error during posting carryover: {e}")
+                err_msg = f"X API Error during posting carryover: {e}"
+                print(f"❌ {err_msg}")
+                send_chatwork_notification(f"[info][title]🔴 【ロト6】キャリーオーバー投稿失敗（X APIエラー）[/title]{err_msg}[/info]")
             except Exception as e:
-                print(f"❌ Unexpected Error: {e}")
+                err_msg = f"Unexpected Error: {e}"
+                print(f"❌ {err_msg}")
+                send_chatwork_notification(f"[info][title]🔴 【ロト6】キャリーオーバー投稿失敗（不明なエラー）[/title]{err_msg}[/info]")
     else:
         print("😴 No new draw detected for result announcements.")
 
