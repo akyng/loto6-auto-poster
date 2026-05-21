@@ -66,7 +66,7 @@ def create_tweets(draw):
         f"💎 ボーナス数字: ({bonus})\n\n"
         f"次回AI予想はアプリ「ロト6 AI予想」にお任せください！🔮✨\n"
         f"👉 {Config.APP_URL}\n\n"
-        f"#ロト6 #Loto6 #当選番号速報"
+        f"#ロト6 #Loto6 #当選番号速報 #ロト6予想"
     )
 
     # 2. キャリーオーバー発生時周知ツイート (約245ポイント)
@@ -79,7 +79,7 @@ def create_tweets(draw):
             f"✨ {carryover:,} 円 ✨\n\n"
             f"次回AI予想はアプリ「ロト6 AI予想」にお任せください！🔮🚀\n"
             f"👉 {Config.APP_URL}\n\n"
-            f"#ロト6 #キャリーオーバー #Loto6"
+            f"#ロト6 #キャリーオーバー #Loto6 #ロト6予想"
         )
 
     return news_tweet, carryover_tweet
@@ -159,8 +159,8 @@ def check_and_post_analysis(draws, cache_data, client, did_post_recently=False):
     # 手動テスト用のフラグ
     force_post = os.getenv('FORCE_ANALYSIS', 'false').lower() == 'true'
 
-    # 日曜日(6) または 水曜日(2) の 20:00台、または強制フラグあり
-    if force_post or (weekday in [2, 6] and hour == 20):
+    # 日曜日(6) または 水曜日(2) の 20:00以降、または強制フラグあり
+    if force_post or (weekday in [2, 6] and hour >= 20):
         last_posted_date = cache_data.get('last_posted_analysis_date', '')
         if force_post or last_posted_date != today_str:
             # 連続投稿時のウェイト（X API スパム防止）
@@ -191,25 +191,26 @@ def check_and_post_analysis(draws, cache_data, client, did_post_recently=False):
 
 def check_and_post_trivia(cache_data, client):
     """
-    日本時間(JST)の毎日 12:00台(正午)に、ロト6/宝くじのトリビアや雑学ネタを自動投稿します。
+    日本時間(JST)の毎日 12:00台(正午)に、曜日別のテーマ（直前予想・前日予想・トリビア）で自動投稿します。
     """
     # 日本時間 (JST) の取得
     JST = timezone(timedelta(hours=9))
     now_jst = datetime.now(JST)
 
+    weekday = now_jst.weekday()  # 0:月, 1:火, 2:水, 3:木, 4:金, 5:土, 6:日
     hour = now_jst.hour
     today_str = now_jst.strftime('%Y-%m-%d')
 
     # 手動テスト用のフラグ
     force_post = os.getenv('FORCE_TRIVIA', 'false').lower() == 'true'
 
-    # 毎日 12:00台、または強制フラグあり
-    if force_post or (hour == 12):
+    # 毎日 12:00以降、または強制フラグあり
+    if force_post or (hour >= 12):
         last_posted_date = cache_data.get('last_posted_trivia_date', '')
         if force_post or last_posted_date != today_str:
-            print("📣 Generating and posting daily Loto6 trivia...")
+            print("📣 Generating and posting daily Loto6 content...")
             from generator import Loto6Generator
-            trivia_text = Loto6Generator.generate_trivia_tweet()
+            trivia_text = Loto6Generator.generate_trivia_tweet(weekday)
             
             if not trivia_text:
                 print("⚠️ Trivia content generation returned None. Skipping post.")
