@@ -77,6 +77,24 @@ class Loto6Publisher:
             raise ValueError(f"無効な PUBLISH_MODE です: {self.publish_mode}")
 
     def _publish_browser(self, tweets: list) -> list:
+        import threading
+        result_box = {}
+        
+        def worker():
+            try:
+                result_box["result"] = self._publish_browser_internal(tweets)
+            except Exception as e:
+                result_box["error"] = e
+                
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+        
+        if "error" in result_box:
+            raise result_box["error"]
+        return result_box["result"]
+
+    def _publish_browser_internal(self, tweets: list) -> list:
         """
         Playwrightによる堅牢なブラウザ自動投稿（単一＆スレッド両対応）
         """
@@ -122,8 +140,18 @@ class Loto6Publisher:
                 print("[*] X投稿画面のロードを6秒間待機中...")
                 time.sleep(6)
                 
+                # ログイン状態の検証
+                if "login" in page.url or "i/flow" in page.url:
+                    print("[!] ログインクッキーが失効している可能性があります。")
+                    browser.close()
+                    raise ValueError(
+                        f"❌ Xへのログインセッション（クッキー）が失効しています。\n"
+                        f"ローカル環境で 'generate_cookies.py' を実行してクッキーを再生成し、\n"
+                        f"GitHub のリポジトリシークレット (X_COOKIE_JSON) を最新のクッキー情報に更新してください。"
+                    )
+                
                 # 投稿モーダルエリア（ダイアログ）の読み込み完了を直接待機
-                page.wait_for_selector('div[role="dialog"] div[role="textbox"]')
+                page.wait_for_selector('div[role="dialog"] [data-testid="tweetTextarea_0"]', timeout=30000)
                 time.sleep(1)
                 
                 # 投稿するスレッドの配列を出力
@@ -133,7 +161,7 @@ class Loto6Publisher:
                 
                 # 1. 親ポストを入力
                 print(f"[*] 1つ目のポストを入力中 (文字数: {len(tweets[0])})...")
-                first_textbox = page.locator('div[role="dialog"] div[role="textbox"]').first
+                first_textbox = page.locator('div[role="dialog"] [data-testid="tweetTextarea_0"]').first
                 first_textbox.wait_for(timeout=15000)
                 first_textbox.click()
                 time.sleep(1)  # フォーカスとアクティブ化の時間を確保
@@ -162,7 +190,7 @@ class Loto6Publisher:
                     print("[*] スレッド追加ボタンをクリックしました。")
                     time.sleep(3)
                     
-                    current_textbox = page.locator('div[role="dialog"] div[role="textbox"]').nth(idx)
+                    current_textbox = page.locator(f'div[role="dialog"] [data-testid="tweetTextarea_{idx}"]').first
                     current_textbox.wait_for(timeout=10000)
                     print(f"[*] 子ポスト #{idx+1} を入力中... (ダイアログ内のインデックス {idx} を検出)")
                     current_textbox.click()
@@ -186,7 +214,7 @@ class Loto6Publisher:
                     
                     try:
                         # 投稿テキストエリアが画面から消える（送信成功）のを5秒監視
-                        page.locator('div[role="dialog"] div[role="textbox"]').first.wait_for(state="hidden", timeout=5000)
+                        page.locator('div[role="dialog"] [data-testid="tweetTextarea_0"]').first.wait_for(state="hidden", timeout=5000)
                         print("[✔] 投稿モーダルが閉じられたことを確認しました！")
                         modal_closed = True
                         break
