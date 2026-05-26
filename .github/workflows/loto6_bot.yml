@@ -29,6 +29,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # 3.5. Playwrightブラウザのセットアップ
+      - name: Install Playwright Browser
+        run: |
+          playwright install chromium
+
+      # 3.6. Xログインクッキーの復元
+      - name: Restore X session cookies
+        env:
+          X_COOKIE_JSON: ${{ secrets.X_COOKIE_JSON }}
+        run: |
+          if [ -n "$X_COOKIE_JSON" ]; then
+            echo "$X_COOKIE_JSON" > loto6_cookies.json
+            echo "✅ X session cookies successfully restored."
+          else
+            echo "❌ X_COOKIE_JSON secret is empty or not set. Browser mode will fail without cookies."
+            exit 1
+          fi
+
       # 4. ボットスクリプトの実行 (GitHub Secretsから環境変数を安全に注入)
       - name: Run Auto-Poster Bot
         env:
@@ -39,6 +57,7 @@ jobs:
           X_APP_URL: ${{ secrets.X_APP_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          PUBLISH_MODE: browser
           CHATWORK_API_TOKEN: ${{ secrets.CHATWORK_API_TOKEN }}
           CHATWORK_ROOM_ID: ${{ secrets.CHATWORK_ROOM_ID }}
         run: python bot.py

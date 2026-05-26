@@ -118,6 +118,7 @@ class Loto6Publisher:
             
             cleaned_cookies = []
             for c in cookies:
+                # sameSiteが想定外の値の場合はPlaywrightの仕様(Strict, Lax, None)に合わせて修正
                 if "sameSite" in c:
                     val = c["sameSite"]
                     if val is None or str(val).lower() in ["no_restriction", "none"]:
@@ -128,6 +129,15 @@ class Loto6Publisher:
                         c["sameSite"] = "Strict"
                     else:
                         del c["sameSite"]
+                
+                # secureが数値(1/0)の場合はbooleanに変換
+                if "secure" in c:
+                    c["secure"] = bool(c["secure"])
+                    
+                # httpOnlyが数値の場合はbooleanに変換
+                if "httpOnly" in c:
+                    c["httpOnly"] = bool(c["httpOnly"])
+                    
                 cleaned_cookies.append(c)
                 
             context.add_cookies(cleaned_cookies)
