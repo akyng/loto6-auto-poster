@@ -1,8 +1,8 @@
 name: Loto6 X Auto-Poster Bot
 
 on:
-  schedule:
-    - cron: '0 * * * *'       # 1時間ごとに全自動で実行 (毎時0分)
+  # schedule:
+  #   - cron: '0 * * * *'       # 1時間ごとに全自動で実行 (毎時0分)
   workflow_dispatch:          # GitHubの管理画面から「手動実行」も可能にします
 
 permissions:

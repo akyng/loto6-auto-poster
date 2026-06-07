@@ -59,7 +59,7 @@ class Loto6Generator:
 """
 
         try:
-            model = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+            model = os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
             print(f"🧠 Generating Loto6 Trivia via Gemini ({model})...")
             response = client.models.generate_content(
                 model=model,

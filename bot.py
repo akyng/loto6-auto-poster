@@ -49,29 +49,14 @@ def save_cache(data):
         print(f"💾 Updated cache: {data}")
     except Exception as e:
         print(f"❌ Cache write error: {e}")
-
 def send_chatwork_notification(message: str) -> None:
-    """Chatwork に通知メッセージを送信する。"""
-    import requests
-    token = Config.CHATWORK_API_TOKEN
-    room_id = Config.CHATWORK_ROOM_ID
-    if not token or not room_id:
-        print("⚠️ Chatwork credentials missing. Skipping notification.")
-        return
-    url = f"https://api.chatwork.com/v2/rooms/{room_id}/messages"
-    headers = {"X-ChatWorkToken": token}
-    data = {"body": message}
-    try:
-        response = requests.post(url, headers=headers, data=data)
-        response.raise_for_status()
-        print("✅ Chatwork notification sent!")
-    except Exception as e:
-        print(f"❌ Failed to send Chatwork notification: {e}")
+    """Chatwork に通知メッセージを送信する。(通知は完全に停止されました)"""
+    return
 
 def create_tweets(draw):
     """
-    ロト6の当選データから、自動投稿用のツイートテキストを作成します。
-    ※Twitter API文字数制限(全角140文字/半角280文字)を考慮してスリム化しています。
+    ロト6の当選データから、自動投稿用のツイートテキスト（スレッド用リスト）を作成します。
+    Xアルゴリズム対策のため、メインポストにはリンクを含めず、返信ポストにリンクとタグを分離します。
     """
     draw_num = draw['draw_number']
     date = draw['draw_date']
@@ -79,31 +64,43 @@ def create_tweets(draw):
     bonus = draw['bonus_number']
     carryover = draw['carryover']
 
-    # 1. 当選番号速報ツイート (約230ポイント)
-    news_tweet = (
+    # 1. 当選番号速報スレッド
+    # 親ポスト（リンクなし、ハッシュタグ厳選）
+    news_main = (
         f"【第{draw_num}回 ロト6 当選番号速報】\n"
         f"📅 抽せん日: {date}\n\n"
         f"🎨 本数字: {nums_str}\n"
         f"💎 ボーナス数字: ({bonus})\n\n"
+        f"#ロト6 #Loto6 #当選番号速報"
+    )
+    # 子ポスト（アプリ宣伝＋リンク）
+    news_reply = (
         f"次回AI予想はアプリ「ロト6 AI予想」にお任せください！🔮✨\n"
         f"👉 {Config.APP_URL}\n\n"
-        f"#ロト6 #Loto6 #当選番号速報 #ロト6予想"
+        f"#ロト6予想 #宝くじ"
     )
+    news_tweets = [news_main, news_reply]
 
-    # 2. キャリーオーバー発生時周知ツイート (約245ポイント)
-    carryover_tweet = None
+    # 2. キャリーオーバー発生時周知スレッド
+    carryover_tweets = None
     if carryover > 0:
-        carryover_tweet = (
+        # 親ポスト（リンクなし）
+        co_main = (
             f"【ロト6 キャリーオーバー情報！🔥】\n"
             f"第{draw_num}回の抽せん結果、次回へのキャリーオーバーが発生中！\n\n"
             f"💰 キャリーオーバー額：\n"
             f"✨ {carryover:,} 円 ✨\n\n"
+            f"#ロト6 #キャリーオーバー #Loto6"
+        )
+        # 子ポスト（アプリ宣伝＋リンク）
+        co_reply = (
             f"次回AI予想はアプリ「ロト6 AI予想」にお任せください！🔮🚀\n"
             f"👉 {Config.APP_URL}\n\n"
-            f"#ロト6 #キャリーオーバー #Loto6 #ロト6予想"
+            f"#ロト6予想 #宝くじ"
         )
+        carryover_tweets = [co_main, co_reply]
 
-    return news_tweet, carryover_tweet
+    return news_tweets, carryover_tweets
 
 def generate_analysis_tweet(draws, weekday):
     """
@@ -190,8 +187,6 @@ def check_and_post_analysis(draws, cache_data, publisher, did_post_recently=Fals
                 time.sleep(10)
                 
             analysis_text = generate_analysis_tweet(draws, weekday)
-            if force_post:
-                analysis_text += f"\n\n(分析時間: {now_jst.strftime('%H:%M')})"
             
             try:
                 print("📣 Posting Draw Eve Analysis to X...")
@@ -359,12 +354,12 @@ def main():
     # 5. 新しい回号の判定と自動結果速報の投稿 (月曜・木曜夜用)
     if latest_draw_num > last_posted:
         print(f"🚀 New draw detected! (第{latest_draw_num}回 > 第{last_posted}回)")
-        news_text, carryover_text = create_tweets(latest_draw)
+        news_tweets, carryover_tweets = create_tweets(latest_draw)
         
         # A. 当選番号速報の投稿
         try:
             print("📣 Posting winning numbers breaking news...")
-            publisher.publish_thread([news_text])
+            publisher.publish_thread(news_tweets)
             print(f"✅ Posted successfully.")
             did_post_recently = True
             
@@ -373,9 +368,10 @@ def main():
             save_cache(cache_data)
             
             # Chatwork 成功通知！
+            posted_text = "\n\n".join([f"[ポスト {i+1}]\n{tw}" for i, tw in enumerate(news_tweets)])
             msg = (
                 f"[info][title]🎉 【ロト6】第{latest_draw_num}回 抽せん結果速報 投稿成功！[/title]"
-                f"投稿内容:\n{news_text}[/info]"
+                f"投稿内容:\n{posted_text}[/info]"
             )
             send_chatwork_notification(msg)
             
@@ -385,21 +381,22 @@ def main():
             send_chatwork_notification(f"[info][title]🔴 【ロト6】結果速報投稿失敗[/title]{err_msg}[/info]")
 
         # B. キャリーオーバー速報の投稿（発生している場合）
-        if carryover_text and cache_data['last_draw_number'] == latest_draw_num:
+        if carryover_tweets and cache_data['last_draw_number'] == latest_draw_num:
             # Xの連続投稿防止のためのディレイ（10秒）
             print("⏱️ Cooldown wait before posting carryover...")
             time.sleep(10)
             
             try:
                 print("📣 Carryover detected. Posting carryover info...")
-                publisher.publish_thread([carryover_text])
+                publisher.publish_thread(carryover_tweets)
                 print(f"✅ Carryover posted successfully.")
                 did_post_recently = True
                 
                 # Chatwork 成功通知！
+                posted_co_text = "\n\n".join([f"[ポスト {i+1}]\n{tw}" for i, tw in enumerate(carryover_tweets)])
                 msg = (
                     f"[info][title]💰 【ロト6】キャリーオーバー情報 投稿成功！[/title]"
-                    f"投稿内容:\n{carryover_text}[/info]"
+                    f"投稿内容:\n{posted_co_text}[/info]"
                 )
                 send_chatwork_notification(msg)
             except Exception as e:
