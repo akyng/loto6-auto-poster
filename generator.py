@@ -5,7 +5,7 @@ from google.genai import types
 
 class Loto6Generator:
     @staticmethod
-    def generate_trivia_tweet(weekday=None):
+    def generate_trivia_tweet(weekday=None, history=None):
         """
         完全無料のGemini APIを利用して、ロト6や宝くじに関する知的な雑学、
         統計学ハック、購入者のためのマインドセット、または曜日別テーマ（直前予想・前日予想）に関するポストを自動生成します。
@@ -40,6 +40,15 @@ class Loto6Generator:
             theme_title = "一般トリビア・雑学"
             theme_prompt = """ロト6や宝くじ、世界のユニークな富くじの面白い歴史・雑学、確率論的ハック、または購入者のモチベーションを高めるマインドセットやスマートな選び方をテーマにしてください。"""
 
+        # 履歴テキストの構築
+        history_instruction = ""
+        if history:
+            history_instruction = "\n【注意：以下の最近の投稿内容とトピックや切り口、構成が重複しないように、別の雑学・アプローチで新しく作成してください】\n"
+            for h in history:
+                # 簡潔に履歴を伝えるため、改行などをスペースに変換
+                h_clean = h.replace('\n', ' ').strip()
+                history_instruction += f"- {h_clean[:120]}\n"
+
         # プロンプトの定義
         prompt = f"""
 あなたは「ロト6予測アドバイザー」です。
@@ -47,6 +56,7 @@ class Loto6Generator:
 
 【今回の生成指示】
 {theme_prompt}
+{history_instruction}
 
 【執筆ルール】
 - Xの最新アルゴリズムに基づき、インプレッションが爆発的に伸びる（バズる）ような強烈なフック（惹きつけ）を冒頭に配置し、読者が思わず「いいね」やブックマークをしたくなるような有益な構成にしてください。

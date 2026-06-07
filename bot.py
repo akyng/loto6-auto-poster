@@ -245,9 +245,9 @@ def check_and_post_trivia(cache_data, publisher):
     if force_post or (hour >= 12):
         last_posted_date = cache_data.get('last_posted_trivia_date', '')
         if force_post or last_posted_date != today_str:
-            print("📣 Generating and posting daily Loto6 content...")
             from generator import Loto6Generator
-            trivia_text = Loto6Generator.generate_trivia_tweet(weekday)
+            history = cache_data.get('trivia_history', [])
+            trivia_text = Loto6Generator.generate_trivia_tweet(weekday, history=history)
             
             if not trivia_text:
                 print("⚠️ Trivia content generation returned None. Skipping post.")
@@ -292,6 +292,11 @@ def check_and_post_trivia(cache_data, publisher):
                 
                 # キャッシュを更新して保存
                 cache_data['last_posted_trivia_date'] = today_str
+                if 'trivia_history' not in cache_data:
+                    cache_data['trivia_history'] = []
+                cache_data['trivia_history'].append(tweets_to_post[0])
+                if len(cache_data['trivia_history']) > 10:
+                    cache_data['trivia_history'] = cache_data['trivia_history'][-10:]
                 save_cache(cache_data)
                 
                 # Chatwork 成功通知！

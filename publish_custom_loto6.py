@@ -35,7 +35,25 @@ def main():
         print("❌ Error: GEMINI_API_KEY is not set.")
         sys.exit(1)
     client = genai.Client(api_key=api_key)
-    
+    # 1.5. Load cache history
+    import json
+    cache_path = os.path.join(os.path.dirname(__file__), 'cache.json')
+    cache_data = {}
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+        except Exception as e:
+            print(f"⚠️ Failed to load cache: {e}")
+            
+    history = cache_data.get('trivia_history', [])
+    history_instruction = ""
+    if history:
+        history_instruction = "\n【注意：以下の最近の投稿内容とトピックや切り口、構成が重複しないように、別の雑学・アプローチで新しく作成してください】\n"
+        for h in history:
+            h_clean = h.replace('\n', ' ').strip()
+            history_instruction += f"- {h_clean[:120]}\n"
+
     # 3. Create Custom Prompt for Loto6 Logic / Trivia
     app_url = Config.APP_URL
     prompt = f"""
@@ -48,6 +66,7 @@ X（旧Twitter）で、ロト6購入者に向けて「ロト6の統計・数値�
 - 下1桁（末尾）が同じ数字（例: 04, 14, 24など）が含まれる確率、
 - あるいは「合計値」がどのレンジに収まりやすいか（大半が95〜152の間に収まるという統計データ）など、
 購入者が「明日の選択肢に今すぐ使える具体的かつ説得力のある数値統計」を1つ取り上げてください。
+{history_instruction}
 
 【執筆ルール】
 - 冒頭にインパクトのあるフック（例：「ロト6で絶対に知っておくべき統計の真実」や「偶然だと思っていませんか？」など）を配置してください。
@@ -112,6 +131,20 @@ X（旧Twitter）で、ロト6購入者に向けて「ロト6の統計・数値�
         
         if len(published_ids) == len(tweets_to_post):
             print("🎉 Custom Loto6 post successfully published!")
+            
+            # Save to trivia_history
+            if 'trivia_history' not in cache_data:
+                cache_data['trivia_history'] = []
+            cache_data['trivia_history'].append(tweets_to_post[0])
+            if len(cache_data['trivia_history']) > 10:
+                cache_data['trivia_history'] = cache_data['trivia_history'][-10:]
+            
+            try:
+                with open(cache_path, 'w', encoding='utf-8') as f:
+                    json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                print("💾 Updated cache history.")
+            except Exception as e:
+                print(f"⚠️ Failed to save cache: {e}")
             
             # Chatwork notification disabled
             print("⚠️ Chatwork notification is disabled.")
