@@ -1,0 +1,29 @@
+name: Aggregate Stats
+
+on:
+  schedule:
+    - cron: '30 18 * * *' # 日本時間 毎日午前3:30 (UTC 18:30)
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  run-aggregator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+
+      - name: Create credentials file
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > service_account.json
+
+      - name: Run Aggregator
+        run: |
+          python aggregate_stats.py
