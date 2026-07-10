@@ -34,8 +34,15 @@ jobs:
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: |
+          if [ -z "$FIREBASE_SA" ]; then
+            echo "❌ FIREBASE_SERVICE_ACCOUNT_JSON secret is EMPTY or NOT SET in this repository!"
+            echo "Please add it in: Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
           printf '%s' "$FIREBASE_SA" > service_account.json
-          echo "✅ service_account.json size: $(wc -c < service_account.json) bytes"
+          FILE_SIZE=$(wc -c < service_account.json)
+          echo "✅ service_account.json created: ${FILE_SIZE} bytes"
+          python -c "import json; json.load(open('service_account.json')); print('✅ JSON is valid')"
 
       - name: Run Aggregator
         run: |
