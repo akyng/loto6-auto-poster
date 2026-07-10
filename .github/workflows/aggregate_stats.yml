@@ -19,13 +19,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install pytz
+          python -m pip install firebase-admin
+          python -m pip install requests beautifulsoup4 tweepy python-dotenv
           python -m pip install -r requirements.txt
-          python -m pip install pytz --force-reinstall
 
-      - name: Debug - verify installed packages
+      - name: Debug - verify imports
         run: |
-          python -m pip list | grep -i pytz
           python -c "import pytz; print('pytz OK:', pytz.__version__)"
+          python -c "import firebase_admin; print('firebase_admin OK:', firebase_admin.__version__)"
+          python -c "import bs4; print('bs4 OK:', bs4.__version__)"
 
       - name: Create credentials file
         run: |
