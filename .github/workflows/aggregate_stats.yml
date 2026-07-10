@@ -20,6 +20,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          python -m pip install pytz --force-reinstall
+
+      - name: Debug - verify installed packages
+        run: |
+          python -m pip list | grep -i pytz
+          python -c "import pytz; print('pytz OK:', pytz.__version__)"
 
       - name: Create credentials file
         run: |
