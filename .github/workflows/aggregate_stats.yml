@@ -31,8 +31,11 @@ jobs:
           python -c "import bs4; print('bs4 OK:', bs4.__version__)"
 
       - name: Create credentials file
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > service_account.json
+          printf '%s' "$FIREBASE_SA" > service_account.json
+          echo "✅ service_account.json size: $(wc -c < service_account.json) bytes"
 
       - name: Run Aggregator
         run: |
