@@ -17,16 +17,13 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        working-directory: backend
         run: |
           pip install -r requirements.txt
 
       - name: Create credentials file
-        working-directory: backend
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > service_account.json
 
       - name: Run Aggregator
-        working-directory: backend
         run: |
           python aggregate_stats.py
