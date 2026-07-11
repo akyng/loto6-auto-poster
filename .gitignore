@@ -4,3 +4,13 @@ __pycache__/
 .DS_Store
 *.png
 composer_debug.html
+service_account.json
+scratch_*.py
+*.pem
+*.p12
+*.key
+*.csr
+*.der
+*.hprof
+cache.json
+loto6_cookies.json

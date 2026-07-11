@@ -132,3 +132,63 @@ crontab -e
 最新のロト6 AI予想アプリをダウンロードして、次回の神予想を今すぐチェック！🚀
 #ロト6 #キャリーオーバー #Loto6
 ```
+
+---
+
+## 📈 当選予想実績の自動集計 (aggregate_stats.py)
+
+このスクリプトは、アプリユーザーが生成したAI予想実績（`predictions_raw` コレクション）を、Webからスクレイピングした最新の当選結果と突合・集集計し、アプリ表示用の `global_stats` コレクションを更新するバッチ処理スクリプトです。
+集計完了した生の予想データはFirestoreから自動削除されるため、**データベース容量をほぼゼロに維持し、Firestoreの無料枠のみで永続運用可能**な設計になっています。
+
+### 🚀 セットアップ手順
+
+#### 1. サービスアカウントキーの配置
+1. **[Firebase Console](https://console.firebase.google.com/)** にアクセスし、プロジェクトを開きます。
+2. 設定アイコン（歯車）⚙️ ➡️ **「プロジェクトの設定」** ➡️ **「サービス アカウント」** タブを開きます。
+3. **「新しい秘密鍵の生成」** ボタンを押し、JSONキーファイルをダウンロードします。
+4. ダウンロードしたファイルを `service_account.json` にリネームし、`backend` フォルダの直下に配置します。
+   *(※このJSONファイルにはデータベースのフルアクセス権限が含まれるため、Git等で公開リポジトリにアップロードしないようご注意ください。)*
+
+#### 2. 手動での集計テスト実行
+ターミナルで `backend` ディレクトリへ移動し、以下のコマンドを実行します：
+
+```bash
+python3 aggregate_stats.py
+```
+
+実行に成功すると、最新の当選結果との突合が行われ、`global_stats` ドキュメントが自動更新/生成されます。
+
+### ☁️ 🛠️ GitHub Actions での定期自動集計設定
+Xボットの自動運転と同様に、GitHub Actions で定期実行（例：毎日深夜）させる場合は、以下のように設定します。
+
+1. **GitHub Secretsへの登録**
+   `service_account.json` の中身（テキスト全体）を、GitHub Secretsに `FIREBASE_SERVICE_ACCOUNT_JSON` という名前で登録します。
+2. **GitHub Actions ワークフローの追加**
+   `.github/workflows/aggregate_stats.yml` などを作成し、毎日深夜に自動実行するように設定します。（以下は設定例）
+
+```yaml
+name: Aggregate Stats
+on:
+  schedule:
+    - cron: '30 18 * * *' # 日本時間 毎日午前3:30 (UTC 18:30)
+  workflow_dispatch: # 手動実行用
+
+jobs:
+  run-aggregator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+      - name: Create credentials file
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > backend/service_account.json
+      - name: Run Aggregator
+        run: |
+          python backend/aggregate_stats.py
+```

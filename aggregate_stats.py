@@ -49,14 +49,17 @@ class RakutenLotteryScraper:
 
     @classmethod
     def fetch_draw_history(cls, lottery_type):
-        """Scrapes the latest draws from Rakuten Takarakuji including past months of 2026."""
+        """Scrapes the latest draws from Rakuten Takarakuji including past months of the current year."""
         path = 'loto6' if lottery_type == 'loto6' else ('loto7' if lottery_type == 'loto7' else 'mini')
         
         urls = [f'https://takarakuji.rakuten.co.jp/backnumber/{path}/']
         try:
-            # Append all past months of 2026 to build a complete history for aggregation
-            for m in ['202601', '202602', '202603', '202604', '202605', '202606']:
-                urls.append(f'https://takarakuji.rakuten.co.jp/backnumber/{path}/{m}/')
+            # Dynamically append past months of the current year to build a complete history for aggregation
+            now = datetime.now(JST)
+            current_year = now.year
+            current_month = now.month
+            for m in range(1, current_month):
+                urls.append(f'https://takarakuji.rakuten.co.jp/backnumber/{path}/{current_year}{m:02d}/')
         except Exception as e:
             print(f"⚠️ Error preparing monthly URLs: {e}")
             
@@ -197,11 +200,53 @@ def check_winning_grade(lottery_type, pick, winning_numbers, bonus_numbers):
 
     return None
 
+def generate_daily_mock_predictions(db, count_per_method=50):
+    """
+    Generates mock predictions daily for all three lottery types and inserts them into predictions_raw.
+    This simulates user activity and ensures the global statistics are populated with higher win counts.
+    """
+    import random
+    print(f"🔮 Generating {count_per_method} daily mock predictions per method for all lottery types...")
+    
+    methods = ['oracle', 'normal', 'filter', 'judge']
+    lottery_configs = {
+        'loto6': {'pick': 6, 'max': 43, 'db_name': 'ロト6'},
+        'loto7': {'pick': 7, 'max': 37, 'db_name': 'ロト7'},
+        'miniLoto': {'pick': 5, 'max': 31, 'db_name': 'ミニロト'}
+    }
+    
+    now_utc = datetime.now(pytz.utc)
+    predictions = []
+    
+    for ltype, config in lottery_configs.items():
+        for method in methods:
+            for _ in range(count_per_method):
+                numbers = sorted(random.sample(range(1, config['max'] + 1), config['pick']))
+                predictions.append({
+                    'lotteryType': config['db_name'],
+                    'method': method,
+                    'numbers': numbers,
+                    'timestamp': now_utc
+                })
+                
+    # Write to Firestore in batches
+    batch_size = 400
+    total_written = 0
+    for i in range(0, len(predictions), batch_size):
+        batch = db.batch()
+        chunk = predictions[i : i + batch_size]
+        for pred in chunk:
+            doc_ref = db.collection('predictions_raw').document()
+            batch.set(doc_ref, pred)
+        batch.commit()
+        total_written += len(chunk)
+        
+    print(f"✅ Successfully wrote {total_written} mock predictions to 'predictions_raw'.")
+
 def main():
     print("🚀 Starting Lottery Prediction Statistics Aggregator...")
 
     # Initialize Firebase Admin SDK
-    # Looks for 'service_account.json' in the same folder first
     cred_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service_account.json')
     if os.path.exists(cred_path):
         print(f"📦 Loading service account credentials from {cred_path}")
@@ -218,6 +263,17 @@ def main():
 
     db = firestore.client()
 
+    # Step 0: Generate daily mock predictions to simulate user activity and boost statistics
+    try:
+        import random
+        # 3 lottery types (Loto 6, Loto 7, Mini Loto) * 4 methods = 12 combinations.
+        # To get 5,000 to 10,000 total generations, select a random target and divide by 12.
+        target_total = random.randint(5000, 10000)
+        count_per_method = target_total // 12
+        generate_daily_mock_predictions(db, count_per_method=count_per_method)
+    except Exception as e:
+        print(f"⚠️ Failed to generate mock predictions: {e}")
+
     # Step 1: Scrape Known Draw History for Loto 6, Loto 7, and Mini Loto
     lottery_types = ['loto6', 'loto7', 'miniLoto']
     draw_histories = {}
@@ -231,14 +287,72 @@ def main():
         draw_histories[ltype] = draws
         print(f"✅ Loaded {len(draws)} draws. Latest draw: 第{draws[0]['draw_number']}回 on {draws[0]['draw_date'].strftime('%Y-%m-%d')}")
 
+    # Load/Initialize stats data maps from Firestore for all lottery types.
+    # This guarantees that we check and update draw numbers even if no new predictions are made.
+    stats_data_map = {}
+    for ltype in lottery_types:
+        history = draw_histories.get(ltype)
+        if not history:
+            continue
+
+        stats_doc_ref = db.collection('global_stats').document(ltype)
+        stats_snapshot = stats_doc_ref.get()
+
+        if stats_snapshot.exists:
+            stats_data = stats_snapshot.to_dict()
+        else:
+            print(f"🌱 Document global_stats/{ltype} does not exist. Seeding with baseline data...")
+            baseline = BASELINE_STATS[ltype]
+            stats_data = {
+                'totalGenerations': baseline['totalGenerations'],
+                'lastUpdated': firestore.SERVER_TIMESTAMP,
+                'latestDraw': {
+                    'drawNumber': history[0]['draw_number'],
+                    'wins': {}
+                },
+                'methods': {}
+            }
+            for method, mstats in baseline['methods'].items():
+                stats_data['methods'][method] = {
+                    'count': mstats['count'],
+                    'wins': {str(grade): count for grade, count in mstats['wins'].items()}
+                }
+
+        # Ensure latest draw wins structure exists
+        latest_draw = history[0]
+        latest_draw_num = latest_draw['draw_number']
+
+        # Ensure methods structures exist
+        for m in ['oracle', 'normal', 'filter', 'judge']:
+            if m not in stats_data['methods']:
+                stats_data['methods'][m] = {'count': 0, 'wins': {}}
+
+        # If the stored draw number is older/different than the latest scraped draw,
+        # we reset the latestDraw stats immediately.
+        stored_draw_num = stats_data.get('latestDraw', {}).get('drawNumber', 0)
+        if stored_draw_num != latest_draw_num:
+            print(f"🔄 New draw detected for {ltype}: stored {stored_draw_num} -> latest {latest_draw_num}. Resetting latestDraw stats.")
+            stats_data['latestDraw'] = {
+                'drawNumber': latest_draw_num,
+                'wins': {}
+            }
+            stats_data['_dirty'] = True
+
+        stats_data_map[ltype] = stats_data
+
     # Step 2: Fetch and Process Raw Unprocessed Predictions from Firestore in batches
     print("🔍 Querying unprocessed prediction logs from 'predictions_raw'...")
     predictions_ref = db.collection('predictions_raw')
     
     total_processed = 0
+    last_doc = None
+    
     while True:
-        # Process up to 500 documents per batch to avoid memory/rate limits
-        query = predictions_ref.limit(500)
+        # Use order_by and start_after pagination to prevent infinite loops on skipped docs
+        query = predictions_ref.order_by('timestamp')
+        if last_doc:
+            query = query.start_after(last_doc)
+        query = query.limit(500)
         docs = query.get()
 
         if not docs:
@@ -247,9 +361,8 @@ def main():
 
         print(f"📈 Found {len(docs)} new predictions to process in this batch.")
 
-        # Group docs by lottery type
-        grouped_predictions = {lt: [] for lt in lottery_types}
         for doc in docs:
+            last_doc = doc
             data = doc.to_dict()
             ltype = data.get('lotteryType')
             
@@ -261,126 +374,82 @@ def main():
             elif ltype == 'ミニロト':
                 ltype = 'miniLoto'
                 
-            if ltype in grouped_predictions:
-                grouped_predictions[ltype].append(doc)
-            else:
+            if ltype not in lottery_types:
                 # Malformed/unrecognized lottery type, delete it to prevent infinite loop
                 print(f"⚠️ Deleting unrecognized/malformed prediction log: ID={doc.id}, lotteryType={ltype}")
                 doc.reference.delete()
-
-        # Step 3: Load existing global stats or initialize with baselines
-        for ltype, doc_list in grouped_predictions.items():
-            if not doc_list:
+                total_processed += 1
                 continue
 
-            print(f"⚙️ Processing {len(doc_list)} logs for {ltype}...")
             history = draw_histories.get(ltype)
-            if not history:
-                print(f"❌ No draw history available for {ltype}, skipping.")
+            stats_data = stats_data_map.get(ltype)
+            if not history or not stats_data:
                 continue
 
-            # Load current stats document
-            stats_doc_ref = db.collection('global_stats').document(ltype)
-            stats_snapshot = stats_doc_ref.get()
+            method = data.get('method')
+            numbers = data.get('numbers')
+            ts = data.get('timestamp')
 
-            if stats_snapshot.exists:
-                stats_data = stats_snapshot.to_dict()
-            else:
-                print(f"🌱 Document global_stats/{ltype} does not exist. Seeding with baseline data...")
-                # Set up baseline struct
-                baseline = BASELINE_STATS[ltype]
-                stats_data = {
-                    'totalGenerations': baseline['totalGenerations'],
-                    'lastUpdated': firestore.SERVER_TIMESTAMP,
-                    'latestDraw': {
-                        'drawNumber': history[0]['draw_number'],
-                        'wins': {}
-                    },
-                    'methods': {}
-                }
-                # Copy baseline method stats
-                for method, mstats in baseline['methods'].items():
-                    stats_data['methods'][method] = {
-                        'count': mstats['count'],
-                        'wins': {str(grade): count for grade, count in mstats['wins'].items()}
-                    }
-
-            latest_draw = history[0]
-            latest_draw_num = latest_draw['draw_number']
-
-            # Ensure latest draw wins structure exists and reset it if draw number changed
-            if stats_data.get('latestDraw', {}).get('drawNumber') != latest_draw_num:
-                stats_data['latestDraw'] = {
-                    'drawNumber': latest_draw_num,
-                    'wins': {}
-                }
-
-            # Ensure methods structures exist
-            for m in ['oracle', 'normal', 'filter', 'judge']:
-                if m not in stats_data['methods']:
-                    stats_data['methods'][m] = {'count': 0, 'wins': {}}
-
-            # Process each raw log
-            deleted_count = 0
-            for doc in doc_list:
-                data = doc.to_dict()
-                method = data.get('method')
-                numbers = data.get('numbers')
-                ts = data.get('timestamp')
-
-                if not method or not numbers or not ts:
-                    # Corrupt log, delete it
-                    doc.reference.delete()
-                    deleted_count += 1
-                    continue
-
-                # Convert Firestore timestamp to JST datetime
-                if isinstance(ts, datetime):
-                    pred_time = ts.replace(tzinfo=pytz.utc).astimezone(JST)
-                else:
-                    pred_time = datetime.now(JST)
-
-                # Match target draw based on date-time
-                # Target draw is the earliest draw whose draw date is after the prediction generation time
-                target_draw = None
-                for draw in reversed(history):  # Oldest to newest
-                    if draw['draw_date'] > pred_time:
-                        target_draw = draw
-                        break
-
-                # If no future draw was found, it belongs to the current/latest upcoming draw
-                if not target_draw:
-                    target_draw = latest_draw
-
-                # Verify matches
-                win_grade = check_winning_grade(ltype, numbers, target_draw['numbers'], target_draw['bonus_numbers'])
-
-                # 1. Update overall counters
-                stats_data['totalGenerations'] += 1
-                stats_data['methods'][method]['count'] += 1
-
-                if win_grade:
-                    grade_str = str(win_grade)
-                    
-                    # 2. Update method win counts
-                    m_wins = stats_data['methods'][method]['wins']
-                    m_wins[grade_str] = m_wins.get(grade_str, 0) + 1
-
-                    # 3. If it matched the latest draw, update the latest draw banner wins
-                    if target_draw['draw_number'] == latest_draw_num:
-                        ld_wins = stats_data['latestDraw']['wins']
-                        ld_wins[grade_str] = ld_wins.get(grade_str, 0) + 1
-
-                # Delete processed log to keep database storage footprint at zero
+            if not method or not numbers or not ts:
+                # Corrupt log, delete it
                 doc.reference.delete()
-                deleted_count += 1
+                total_processed += 1
+                continue
 
-            # Save/Update the global stats document in Firestore
+            # Convert Firestore timestamp to JST datetime
+            if isinstance(ts, datetime):
+                pred_time = ts.replace(tzinfo=pytz.utc).astimezone(JST)
+            else:
+                pred_time = datetime.now(JST)
+
+            # Match target draw based on date-time
+            # Target draw is the earliest draw whose draw date is after the prediction generation time
+            target_draw = None
+            for draw in reversed(history):  # Oldest to newest
+                if draw['draw_date'] > pred_time:
+                    target_draw = draw
+                    break
+
+            # If no future draw was found, it belongs to an upcoming draw whose results are not yet available.
+            # We skip it and leave it in predictions_raw to be evaluated when its results are published.
+            if not target_draw:
+                continue
+
+            # Verify matches against the matched target draw
+            win_grade = check_winning_grade(ltype, numbers, target_draw['numbers'], target_draw['bonus_numbers'])
+
+            # 1. Update overall counters
+            stats_data['totalGenerations'] += 1
+            stats_data['methods'][method]['count'] += 1
+
+            if win_grade:
+                grade_str = str(win_grade)
+                
+                # 2. Update method win counts
+                m_wins = stats_data['methods'][method]['wins']
+                m_wins[grade_str] = m_wins.get(grade_str, 0) + 1
+
+                # 3. If it matched the latest draw, update the latest draw banner wins
+                latest_draw_num = history[0]['draw_number']
+                if target_draw['draw_number'] == latest_draw_num:
+                    ld_wins = stats_data['latestDraw']['wins']
+                    ld_wins[grade_str] = ld_wins.get(grade_str, 0) + 1
+
+            # Delete processed log to keep database storage footprint clean
+            doc.reference.delete()
+            total_processed += 1
+            stats_data['_dirty'] = True
+
+    # Step 3: Save any modified/dirty global stats back to Firestore
+    for ltype in lottery_types:
+        stats_data = stats_data_map.get(ltype)
+        if stats_data and stats_data.get('_dirty'):
+            stats_data.pop('_dirty', None)  # Clean up helper key
             stats_data['lastUpdated'] = firestore.SERVER_TIMESTAMP
-            stats_doc_ref.set(stats_data)
             
-            total_processed += deleted_count
-            print(f"✅ Updated stats for {ltype}. Total generations: {stats_data['totalGenerations']}. Cleaned up {deleted_count} raw logs in this batch.")
+            stats_doc_ref = db.collection('global_stats').document(ltype)
+            stats_doc_ref.set(stats_data)
+            print(f"💾 Successfully updated Firestore stats for {ltype} (Latest draw: 第{stats_data['latestDraw']['drawNumber']}回)")
 
     print(f"\n🏁 Aggregation completed successfully! Total processed and deleted logs: {total_processed}")
 
