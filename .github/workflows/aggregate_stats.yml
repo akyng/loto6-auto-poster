@@ -2,7 +2,7 @@ name: Aggregate Stats
 
 on:
   schedule:
-    - cron: '30 18 * * *' # 日本時間 毎日午前3:30 (UTC 18:30)
+    - cron: '0 12 * * *' # 日本時間 毎日21:00 (UTC 12:00)
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
