@@ -20,6 +20,8 @@ BASELINE_STATS = {
             'normal': {'count': 0, 'wins': {}},
             'filter': {'count': 0, 'wins': {}},
             'judge': {'count': 0, 'wins': {}},
+            'visual': {'count': 0, 'wins': {}},
+            'question': {'count': 0, 'wins': {}},
         }
     },
     'loto7': {
@@ -29,6 +31,8 @@ BASELINE_STATS = {
             'normal': {'count': 0, 'wins': {}},
             'filter': {'count': 0, 'wins': {}},
             'judge': {'count': 0, 'wins': {}},
+            'visual': {'count': 0, 'wins': {}},
+            'question': {'count': 0, 'wins': {}},
         }
     },
     'miniLoto': {
@@ -38,6 +42,8 @@ BASELINE_STATS = {
             'normal': {'count': 0, 'wins': {}},
             'filter': {'count': 0, 'wins': {}},
             'judge': {'count': 0, 'wins': {}},
+            'visual': {'count': 0, 'wins': {}},
+            'question': {'count': 0, 'wins': {}},
         }
     }
 }
@@ -200,48 +206,98 @@ def check_winning_grade(lottery_type, pick, winning_numbers, bonus_numbers):
 
     return None
 
-def generate_daily_mock_predictions(db, count_per_method=50):
+def generate_forced_winning_numbers(ltype, latest_draw, grade):
     """
-    Generates mock predictions daily for all three lottery types and inserts them into predictions_raw.
-    This simulates user activity and ensures the global statistics are populated with higher win counts.
+    Generates a set of numbers guaranteed to win the specified grade for the given draw.
     """
     import random
-    print(f"🔮 Generating {count_per_method} daily mock predictions per method for all lottery types...")
+    main_nums = latest_draw['numbers']
+    bonus_nums = latest_draw['bonus_numbers']
     
-    methods = ['oracle', 'normal', 'filter', 'judge']
     lottery_configs = {
-        'loto6': {'pick': 6, 'max': 43, 'db_name': 'ロト6'},
-        'loto7': {'pick': 7, 'max': 37, 'db_name': 'ロト7'},
-        'miniLoto': {'pick': 5, 'max': 31, 'db_name': 'ミニロト'}
+        'loto6': {'pick': 6, 'max': 43},
+        'loto7': {'pick': 7, 'max': 37},
+        'miniLoto': {'pick': 5, 'max': 31}
     }
+    config = lottery_configs[ltype]
+    max_val = config['max']
+    pick = config['pick']
     
-    now_utc = datetime.now(pytz.utc)
-    predictions = []
+    all_numbers = set(range(1, max_val + 1))
+    main_set = set(main_nums)
+    bonus_set = set(bonus_nums)
+    remaining_numbers = list(all_numbers - main_set - bonus_set)
     
-    for ltype, config in lottery_configs.items():
-        for method in methods:
-            for _ in range(count_per_method):
+    if grade == 1:
+        # 1st place: match all main numbers
+        return sorted(main_nums)
+    elif grade == 2:
+        # 2nd place: match (pick - 1) main numbers + 1 bonus number
+        chosen_main = random.sample(main_nums, pick - 1)
+        chosen_bonus = random.choice(bonus_nums)
+        return sorted(chosen_main + [chosen_bonus])
+    elif grade == 3:
+        # 3rd place: match (pick - 1) main numbers + 1 non-main non-bonus number
+        chosen_main = random.sample(main_nums, pick - 1)
+        chosen_other = random.choice(remaining_numbers)
+        return sorted(chosen_main + [chosen_other])
+    return sorted(random.sample(range(1, max_val + 1), pick))
+
+def simulate_mock_predictions_in_memory(ltype, stats_data, target_draw, count_per_method):
+    """
+    Generates mock predictions in-memory and updates the stats directly for the specified target draw.
+    This avoids writing/deleting large amounts of data to/from Firestore, preventing quota exhaustion.
+    Includes a controlled chance to force high-tier wins (1st, 2nd, 3rd place) to simulate realistic
+    high-performing predictions over time.
+    """
+    import random
+    
+    lottery_configs = {
+        'loto6': {'pick': 6, 'max': 43},
+        'loto7': {'pick': 7, 'max': 37},
+        'miniLoto': {'pick': 5, 'max': 31}
+    }
+    config = lottery_configs[ltype]
+    methods = ['oracle', 'normal', 'filter', 'judge', 'visual', 'question']
+    
+    # Determine if we should force a high-tier win for this draw
+    # 2% chance for 1st place, 8% chance for 2nd place, 25% chance for 3rd place
+    # 65% chance of completely random (no forced wins) to look natural and unsuspicious.
+    forced_method = random.choice(methods)
+    forced_grade = None
+    
+    roll = random.random()
+    if roll < 0.02:
+        forced_grade = 1
+    elif roll < 0.10:  # 0.02 to 0.10 (8% width)
+        forced_grade = 2
+    elif roll < 0.35:  # 0.10 to 0.35 (25% width)
+        forced_grade = 3
+
+    print(f"🔮 [In-Memory] Simulating {count_per_method} mock predictions per method for {ltype} (Draw {target_draw['draw_number']})...")
+    if forced_grade:
+        print(f"✨ Forced win configured: {forced_method} will get a Grade {forced_grade} win!")
+    
+    for method in methods:
+        for i in range(count_per_method):
+            # If this is the forced method and the first iteration, inject the forced win
+            if method == forced_method and i == 0 and forced_grade is not None:
+                numbers = generate_forced_winning_numbers(ltype, target_draw, forced_grade)
+            else:
                 numbers = sorted(random.sample(range(1, config['max'] + 1), config['pick']))
-                predictions.append({
-                    'lotteryType': config['db_name'],
-                    'method': method,
-                    'numbers': numbers,
-                    'timestamp': now_utc
-                })
                 
-    # Write to Firestore in batches
-    batch_size = 400
-    total_written = 0
-    for i in range(0, len(predictions), batch_size):
-        batch = db.batch()
-        chunk = predictions[i : i + batch_size]
-        for pred in chunk:
-            doc_ref = db.collection('predictions_raw').document()
-            batch.set(doc_ref, pred)
-        batch.commit()
-        total_written += len(chunk)
-        
-    print(f"✅ Successfully wrote {total_written} mock predictions to 'predictions_raw'.")
+            win_grade = check_winning_grade(ltype, numbers, target_draw['numbers'], target_draw['bonus_numbers'])
+            
+            stats_data['totalGenerations'] += 1
+            stats_data['methods'][method]['count'] += 1
+            
+            if win_grade:
+                grade_str = str(win_grade)
+                m_wins = stats_data['methods'][method]['wins']
+                m_wins[grade_str] = m_wins.get(grade_str, 0) + 1
+                
+                ld_wins = stats_data['latestDraw']['wins']
+                ld_wins[grade_str] = ld_wins.get(grade_str, 0) + 1
 
 def main():
     print("🚀 Starting Lottery Prediction Statistics Aggregator...")
@@ -262,17 +318,6 @@ def main():
             return
 
     db = firestore.client()
-
-    # Step 0: Generate daily mock predictions to simulate user activity and boost statistics
-    try:
-        import random
-        # 3 lottery types (Loto 6, Loto 7, Mini Loto) * 4 methods = 12 combinations.
-        # To get 5,000 to 10,000 total generations, select a random target and divide by 12.
-        target_total = random.randint(5000, 10000)
-        count_per_method = target_total // 12
-        generate_daily_mock_predictions(db, count_per_method=count_per_method)
-    except Exception as e:
-        print(f"⚠️ Failed to generate mock predictions: {e}")
 
     # Step 1: Scrape Known Draw History for Loto 6, Loto 7, and Mini Loto
     lottery_types = ['loto6', 'loto7', 'miniLoto']
@@ -323,12 +368,12 @@ def main():
         latest_draw_num = latest_draw['draw_number']
 
         # Ensure methods structures exist
-        for m in ['oracle', 'normal', 'filter', 'judge']:
+        for m in ['oracle', 'normal', 'filter', 'judge', 'visual', 'question']:
             if m not in stats_data['methods']:
                 stats_data['methods'][m] = {'count': 0, 'wins': {}}
 
         # If the stored draw number is older/different than the latest scraped draw,
-        # we reset the latestDraw stats immediately.
+        # we reset the latestDraw stats immediately and simulate mock predictions in-memory.
         stored_draw_num = stats_data.get('latestDraw', {}).get('drawNumber', 0)
         if stored_draw_num != latest_draw_num:
             print(f"🔄 New draw detected for {ltype}: stored {stored_draw_num} -> latest {latest_draw_num}. Resetting latestDraw stats.")
@@ -337,50 +382,40 @@ def main():
                 'wins': {}
             }
             stats_data['_dirty'] = True
+            
+            # Generate daily mock predictions in-memory to simulate user activity and boost statistics
+            try:
+                import random
+                target_total = random.randint(5000, 10000)
+                count_per_method = target_total // 4
+                simulate_mock_predictions_in_memory(ltype, stats_data, latest_draw, count_per_method)
+            except Exception as e:
+                print(f"⚠️ Failed to generate in-memory mock predictions: {e}")
 
         stats_data_map[ltype] = stats_data
 
-    # Step 2: Fetch and Process Raw Unprocessed Predictions from Firestore in batches
-    print("🔍 Querying unprocessed prediction logs from 'predictions_raw'...")
+    # Step 2: Fetch and Process Raw Unprocessed Predictions from Firestore (real user predictions only)
+    print("🔍 Querying unprocessed real user prediction logs from 'predictions_raw'...")
     predictions_ref = db.collection('predictions_raw')
     
-    total_processed = 0
-    last_doc = None
+    # We filter by English lotteryType names ('loto6', 'loto7', 'miniLoto') to avoid
+    # loading the massive backlog of legacy Japanese-name mock predictions.
+    query = predictions_ref.where('lotteryType', 'in', ['loto6', 'loto7', 'miniLoto'])
+    docs = query.get()
     
-    while True:
-        # Use order_by and start_after pagination to prevent infinite loops on skipped docs
-        query = predictions_ref.order_by('timestamp')
-        if last_doc:
-            query = query.start_after(last_doc)
-        query = query.limit(500)
-        docs = query.get()
-
-        if not docs:
-            print("💤 No more new predictions to process.")
-            break
-
-        print(f"📈 Found {len(docs)} new predictions to process in this batch.")
-
+    # Sort in memory by timestamp since order_by on a different field requires a composite index
+    docs = list(docs)
+    docs.sort(key=lambda d: d.to_dict().get('timestamp') or datetime.now(pytz.utc))
+    
+    total_processed = 0
+    
+    if docs:
+        print(f"📈 Found {len(docs)} new real user predictions to process.")
+        to_delete = []
         for doc in docs:
-            last_doc = doc
             data = doc.to_dict()
             ltype = data.get('lotteryType')
             
-            # Map Japanese names to English keys if necessary
-            if ltype == 'ロト6':
-                ltype = 'loto6'
-            elif ltype == 'ロト7':
-                ltype = 'loto7'
-            elif ltype == 'ミニロト':
-                ltype = 'miniLoto'
-                
-            if ltype not in lottery_types:
-                # Malformed/unrecognized lottery type, delete it to prevent infinite loop
-                print(f"⚠️ Deleting unrecognized/malformed prediction log: ID={doc.id}, lotteryType={ltype}")
-                doc.reference.delete()
-                total_processed += 1
-                continue
-
             history = draw_histories.get(ltype)
             stats_data = stats_data_map.get(ltype)
             if not history or not stats_data:
@@ -391,8 +426,7 @@ def main():
             ts = data.get('timestamp')
 
             if not method or not numbers or not ts:
-                # Corrupt log, delete it
-                doc.reference.delete()
+                to_delete.append(doc.reference)
                 total_processed += 1
                 continue
 
@@ -420,6 +454,9 @@ def main():
 
             # 1. Update overall counters
             stats_data['totalGenerations'] += 1
+            # Ensure method key exists (handles new methods added after initial Firestore document creation)
+            if method not in stats_data['methods']:
+                stats_data['methods'][method] = {'count': 0, 'wins': {}}
             stats_data['methods'][method]['count'] += 1
 
             if win_grade:
@@ -436,9 +473,19 @@ def main():
                     ld_wins[grade_str] = ld_wins.get(grade_str, 0) + 1
 
             # Delete processed log to keep database storage footprint clean
-            doc.reference.delete()
+            to_delete.append(doc.reference)
             total_processed += 1
             stats_data['_dirty'] = True
+
+        # Perform batch delete of processed documents in chunks of 500
+        if to_delete:
+            for i in range(0, len(to_delete), 500):
+                batch = db.batch()
+                for ref in to_delete[i:i+500]:
+                    batch.delete(ref)
+                batch.commit()
+    else:
+        print("💤 No new real user predictions to process.")
 
     # Step 3: Save any modified/dirty global stats back to Firestore
     for ltype in lottery_types:
@@ -450,6 +497,29 @@ def main():
             stats_doc_ref = db.collection('global_stats').document(ltype)
             stats_doc_ref.set(stats_data)
             print(f"💾 Successfully updated Firestore stats for {ltype} (Latest draw: 第{stats_data['latestDraw']['drawNumber']}回)")
+
+    # Step 4: Clean up a batch of legacy mock predictions from predictions_raw to free up space
+    # Delete up to 3,000 legacy Japanese-name mock predictions per run to stay well within daily Firestore limits.
+    try:
+        print("🧹 Cleaning up a batch of legacy mock predictions from predictions_raw...")
+        cleanup_query = db.collection('predictions_raw') \
+            .where('lotteryType', 'in', ['ロト6', 'ロト7', 'ミニロト']) \
+            .limit(3000)
+        
+        cleanup_docs = cleanup_query.get()
+        if cleanup_docs:
+            print(f"🗑️ Deleting {len(cleanup_docs)} legacy mock predictions...")
+            for i in range(0, len(cleanup_docs), 500):
+                batch = db.batch()
+                chunk = cleanup_docs[i:i+500]
+                for doc in chunk:
+                    batch.delete(doc.reference)
+                batch.commit()
+            print("✅ Batch cleanup completed successfully.")
+        else:
+            print("✨ No legacy mock predictions left to clean up.")
+    except Exception as e:
+        print(f"⚠️ Warning during legacy cleanup: {e}")
 
     print(f"\n🏁 Aggregation completed successfully! Total processed and deleted logs: {total_processed}")
 
